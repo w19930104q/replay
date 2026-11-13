@@ -244,6 +244,94 @@ console.log(
 );
 ```
 
+## 4. Parameterize a recording
+
+A single recording can be reused for different query conditions by binding
+typed parameters to its existing leaf fields. Each binding is declared on the
+flow under `parameters` and points at a field through an
+[RFC 6901 JSON Pointer](https://datatracker.ietf.org/doc/html/rfc6901). Only
+leaf fields can be bound and the `type` field of a step can never be bound.
+
+Supported parameter types are `string`, finite `number` and `boolean`. A
+binding may declare a `defaultValue`; without one the parameter is required.
+Run time values override the defaults.
+
+```json
+{
+  "title": "Report RPA",
+  "parameters": {
+    "region": {
+      "path": "/steps/0/url",
+      "type": "string",
+      "defaultValue": "https://example.com/report?region=default"
+    },
+    "width": { "path": "/steps/2/width", "type": "number" },
+    "mobile": { "path": "/steps/2/isMobile", "type": "boolean" }
+  },
+  "steps": [
+    { "type": "navigate", "url": "https://example.com/report?region=default" },
+    { "type": "change", "selectors": ["#query"], "value": "recorded" },
+    {
+      "type": "setViewport",
+      "width": 800,
+      "height": 600,
+      "deviceScaleFactor": 1,
+      "isMobile": false,
+      "hasTouch": false,
+      "isLandscape": false
+    }
+  ]
+}
+```
+
+The original recording is never modified: every run receives a deeply cloned
+flow with the bound values, so consecutive and parallel runs never leak values
+into each other. Unknown or missing parameters, type mismatches, invalid
+pointers and duplicate bindings make the whole run fail up front, before any
+hook runs or any browser is launched. The error reports every offending
+parameter name and pointer.
+
+### CLI
+
+Pass values with repeatable `--param name=value` arguments. Values are parsed
+as JSON literals (`true`, `false`, numbers and quoted strings); anything else
+is treated as a string.
+
+```sh
+npx @puppeteer/replay recording.json \
+  --param region=https://example.com/report?region=emea \
+  --param width=1280 \
+  --param mobile=true
+```
+
+### Runner API
+
+```js
+import { createRunner, parse } from '@puppeteer/replay';
+
+const recording = parse(JSON.parse(recordingText));
+const runner = await createRunner(recording, extension, {
+  region: 'https://example.com/report?region=emea',
+  width: 1280,
+  mobile: true,
+});
+await runner.run();
+```
+
+### Stringify / script export
+
+The same binding semantics apply when exporting a script. Supplied values (or
+the declared defaults) are embedded as correctly escaped literals, and the
+source map still maps generated lines back to the original steps.
+
+```js
+import { stringify } from '@puppeteer/replay';
+
+const script = await stringify(recording, {
+  parameters: { region: 'https://example.com/report?region=emea' },
+});
+```
+
 ## Others
 
 ### Test your extensions using the replay lib

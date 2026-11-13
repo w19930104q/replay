@@ -7,6 +7,8 @@
 import { PuppeteerRunnerOwningBrowserExtension } from './PuppeteerRunnerExtension.js';
 import { RunnerExtension } from './RunnerExtension.js';
 import type { UserFlow, Step } from './Schema.js';
+import { bindParameters } from './Parameters.js';
+import type { ParameterValues } from './Parameters.js';
 
 async function _runStepWithHooks(
   extension: RunnerExtension,
@@ -36,6 +38,18 @@ export class Runner {
 
   set flow(flow: UserFlow) {
     this.#flow = flow;
+  }
+
+  /**
+   * Validates the flow's parameter bindings against `parameters`, binds the
+   * supplied values (or the declared defaults) and stores a deeply cloned
+   * flow. The original flow is never mutated and every call produces an
+   * independent flow, so repeated and parallel runs cannot leak values into
+   * each other. Throws before any hook runs when a binding or value is
+   * invalid.
+   */
+  setFlow(flow: UserFlow, parameters: ParameterValues = {}): void {
+    this.#flow = bindParameters(flow, flow.parameters, parameters);
   }
 
   async runBeforeAllSteps(flow?: UserFlow): Promise<void> {
@@ -97,21 +111,52 @@ export async function createRunner(
   extension: RunnerExtension
 ): Promise<Runner>;
 export async function createRunner(
+  flow: UserFlow,
+  parameters: ParameterValues
+): Promise<Runner>;
+export async function createRunner(
+  flow: UserFlow,
+  extension: RunnerExtension,
+  parameters: ParameterValues
+): Promise<Runner>;
+export async function createRunner(
   flowOrExtension?: UserFlow | RunnerExtension,
-  maybeExtension?: RunnerExtension
+  maybeExtensionOrParameters?: RunnerExtension | ParameterValues,
+  maybeParameters?: ParameterValues
 ) {
+  const isExtension = (
+    value: RunnerExtension | ParameterValues | UserFlow | undefined
+  ): value is RunnerExtension => value instanceof RunnerExtension;
+
   const extension =
-    flowOrExtension instanceof RunnerExtension
-      ? flowOrExtension
-      : maybeExtension;
-  const flow = !(flowOrExtension instanceof RunnerExtension)
+    (isExtension(flowOrExtension) ? flowOrExtension : undefined) ??
+    (isExtension(maybeExtensionOrParameters)
+      ? maybeExtensionOrParameters
+      : undefined);
+  const flow: UserFlow | undefined = !isExtension(flowOrExtension)
     ? flowOrExtension
     : undefined;
+  const parameters = isExtension(maybeExtensionOrParameters)
+    ? maybeParameters
+    : maybeExtensionOrParameters;
+
+  // Parameters are bound and fully validated before the extension (and thus
+  // any browser owned by it) is created or any hook can run. A flow that
+  // declares parameters is always bound so its defaults apply.
+  const hasDeclarations =
+    flow !== undefined &&
+    flow.parameters !== undefined &&
+    Object.keys(flow.parameters).length > 0;
+  const boundFlow =
+    flow && hasDeclarations
+      ? bindParameters(flow, flow.parameters, parameters ?? {})
+      : flow;
+
   const runner = new Runner(
     extension ?? (await createPuppeteerRunnerOwningBrowserExtension())
   );
-  if (flow) {
-    runner.flow = flow;
+  if (boundFlow) {
+    runner.flow = boundFlow;
   }
   return runner;
 }

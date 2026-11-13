@@ -4,14 +4,19 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { parse, createRunner } from './main.js';
+import {
+  parse,
+  createRunner,
+  PuppeteerRunnerOwningBrowserExtension,
+  bindParameters,
+} from './main.js';
 import { readFileSync, readdirSync, lstatSync } from 'fs';
 import { join, isAbsolute, extname, relative } from 'path';
 import { pathToFileURL } from 'url';
 import { cwd } from 'process';
-import { PuppeteerRunnerOwningBrowserExtension } from './main.js';
 import { Browser } from 'puppeteer';
 import { styleText } from 'node:util';
+import type { ParameterValues, ParameterValue } from './Parameters.js';
 
 export class StatusReport extends Array<string[]> {
   override toString(): string {
@@ -106,6 +111,55 @@ export function getHeadlessEnvVar(headless?: string) {
   }
 }
 
+/**
+ * Parses `--param name=value` CLI arguments into run time parameter values.
+ * Each value is first interpreted as a JSON literal (so `true`, `false`,
+ * numbers and quoted strings keep their type); values that are not valid JSON
+ * are treated as plain strings. Throws on arguments without `=`.
+ */
+export function parseParameterArgs(args: string[]): ParameterValues {
+  const parameters: ParameterValues = {};
+  for (const arg of args) {
+    const separator = arg.indexOf('=');
+    if (separator <= 0) {
+      throw new Error(
+        `Invalid --param argument '${arg}'. Expected 'name=value'.`
+      );
+    }
+    const name = arg.substring(0, separator);
+    const rawValue = arg.substring(separator + 1);
+    parameters[name] = parseParameterValue(rawValue);
+  }
+  return parameters;
+}
+
+function parseParameterValue(rawValue: string): ParameterValue {
+  if (rawValue === 'true') {
+    return true;
+  }
+  if (rawValue === 'false') {
+    return false;
+  }
+  const maybeNumber = Number(rawValue);
+  if (rawValue.trim() !== '' && Number.isFinite(maybeNumber)) {
+    return maybeNumber;
+  }
+  // Fall back to JSON parsing for quoted strings and reject non-scalar JSON.
+  try {
+    const parsed = JSON.parse(rawValue) as unknown;
+    if (
+      typeof parsed === 'string' ||
+      typeof parsed === 'boolean' ||
+      (typeof parsed === 'number' && Number.isFinite(parsed))
+    ) {
+      return parsed;
+    }
+  } catch {
+    // Not valid JSON: treat the raw text as a string.
+  }
+  return rawValue;
+}
+
 type Result = {
   startedAt: Date;
   file: string;
@@ -144,7 +198,12 @@ export async function importExtensionFromPath(path: string): Promise<any> {
 
 export async function runFiles(
   files: string[],
-  opts: { log: boolean; headless: boolean | 'shell'; extension?: string } = {
+  opts: {
+    log: boolean;
+    headless: boolean | 'shell';
+    extension?: string;
+    parameters?: ParameterValues;
+  } = {
     log: true,
     headless: true,
   }
@@ -173,13 +232,25 @@ export async function runFiles(
       const recording = parse(object);
       result.title = recording.title;
 
+      // Bind and validate parameters before launching the browser so that
+      // invalid parameters fail fast with their name and pointer. A flow
+      // with declared parameters is always bound so defaults apply.
+      const boundRecording =
+        recording.parameters && Object.keys(recording.parameters).length > 0
+          ? bindParameters(
+              recording,
+              recording.parameters,
+              opts.parameters ?? {}
+            )
+          : recording;
+
       const { default: puppeteer } = await import('puppeteer');
       browser = await puppeteer.launch({
         headless: opts.headless,
       });
       const page = await browser.newPage();
       const extension = new Extension(browser, page);
-      const runner = await createRunner(recording, extension);
+      const runner = await createRunner(boundRecording, extension);
       await runner.run();
       opts.log && console.log(`Finished running ${file}`);
     } catch (err) {

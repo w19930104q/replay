@@ -10,11 +10,19 @@ import { PuppeteerStringifyExtension } from './PuppeteerStringifyExtension.js';
 import type { Step, UserFlow } from './Schema.js';
 import { StringifyExtension } from './StringifyExtension.js';
 import { decode, encode } from './vlq.js';
+import type { ParameterValues } from './Parameters.js';
+import { bindParameters } from './Parameters.js';
 
 export interface StringifyOptions {
   extension?: StringifyExtension;
   writer?: LineWriter;
   indentation?: string;
+  /**
+   * Run time values for the typed parameters declared on the flow. They are
+   * validated and bound before any stringify hook runs. When omitted, the
+   * declared default values are used.
+   */
+  parameters?: ParameterValues;
 }
 
 const SOURCE_MAP_PREFIX = '//# recorderSourceMap=';
@@ -42,18 +50,27 @@ export async function stringify(
   const ext = opts.extension ?? new PuppeteerStringifyExtension();
   const out = opts.writer ?? new InMemoryLineWriter(opts.indentation ?? '  ');
 
-  await ext.beforeAllSteps?.(out, flow);
+  // Bind and validate parameters before invoking any extension hook. A flow
+  // that declares parameters is always bound so that declared defaults are
+  // applied; the binding only replaces scalar leaf values, so the generated
+  // source map still maps to the original steps.
+  const boundFlow =
+    flow.parameters && Object.keys(flow.parameters).length > 0
+      ? bindParameters(flow, flow.parameters, opts.parameters ?? {})
+      : flow;
+
+  await ext.beforeAllSteps?.(out, boundFlow);
 
   const sourceMap: Array<number> = [1]; // The first int indicates the version.
-  for (const step of flow.steps) {
+  for (const step of boundFlow.steps) {
     const firstLine = out.getSize();
-    await ext.beforeEachStep?.(out, step, flow);
-    await ext.stringifyStep(out, step, flow);
-    await ext.afterEachStep?.(out, step, flow);
+    await ext.beforeEachStep?.(out, step, boundFlow);
+    await ext.stringifyStep(out, step, boundFlow);
+    await ext.afterEachStep?.(out, step, boundFlow);
     const lastLine = out.getSize();
     sourceMap.push(...[firstLine, lastLine - firstLine]);
   }
-  await ext.afterAllSteps?.(out, flow);
+  await ext.afterAllSteps?.(out, boundFlow);
 
   out.appendLine(SOURCE_MAP_PREFIX + encode(sourceMap));
 

@@ -30,3 +30,4 @@ export { PuppeteerReplayStringifyExtension } from './PuppeteerReplayStringifyExt
 export { LighthouseStringifyExtension } from './lighthouse/LighthouseStringifyExtension.js';
 export { LighthouseRunnerExtension } from './lighthouse/LighthouseRunnerExtension.js';
 export * from './JSONUtils.js';
+export * from './Parameters.js';

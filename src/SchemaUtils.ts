@@ -34,6 +34,7 @@ import {
   WaitForExpressionStep,
 } from './Schema.js';
 import { AssertedEventType, StepType } from './Schema.js';
+import type { ParameterDefinitions } from './Parameters.js';
 
 export function assertAllStepTypesAreHandled(s: never): never;
 export function assertAllStepTypesAreHandled(s: Step): never {
@@ -558,6 +559,50 @@ export function validTimeout(timeout: number): boolean {
   return timeout >= minTimeout && timeout <= maxTimeout;
 }
 
+const PARAMETER_TYPES: ReadonlySet<string> = new Set([
+  'string',
+  'number',
+  'boolean',
+]);
+
+function parseParameters(data: unknown): ParameterDefinitions | undefined {
+  if (data === undefined) {
+    return undefined;
+  }
+  if (!isObject(data)) {
+    throw new Error('Recording `parameters` is not an object');
+  }
+  const result: ParameterDefinitions = {};
+  for (const name of Object.keys(data)) {
+    const binding = (data as Record<string, unknown>)[name];
+    if (!isObject(binding)) {
+      throw new Error(`Parameter '${name}' binding is not an object`);
+    }
+    const entry = binding as Record<string, unknown>;
+    if (!isString(entry['path']) || entry['path'] === '') {
+      throw new Error(`Parameter '${name}' is missing a string 'path'`);
+    }
+    if (
+      !isString(entry['type']) ||
+      !PARAMETER_TYPES.has(entry['type'] as string)
+    ) {
+      throw new Error(
+        `Parameter '${name}' must declare a type of 'string', 'number' or 'boolean'`
+      );
+    }
+    if (
+      entry['defaultValue'] !== undefined &&
+      !isString(entry['defaultValue']) &&
+      !isNumber(entry['defaultValue']) &&
+      !isBoolean(entry['defaultValue'])
+    ) {
+      throw new Error(`Parameter '${name}' has an invalid default value`);
+    }
+    result[name] = entry as unknown as ParameterDefinitions[string];
+  }
+  return result;
+}
+
 export function parse(data: unknown): UserFlow {
   if (!isObject(data)) {
     throw new Error('Recording is not an object');
@@ -591,6 +636,9 @@ export function parse(data: unknown): UserFlow {
       hasProperty(data, 'selectorAttribute') && isString(data.selectorAttribute)
         ? data.selectorAttribute
         : undefined,
+    parameters: parseParameters(
+      hasProperty(data, 'parameters') ? data.parameters : undefined
+    ),
     steps: parseSteps(data.steps),
   });
 }

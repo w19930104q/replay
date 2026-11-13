@@ -9,7 +9,7 @@ export default [
 
   // Main configuration for JS/TS files
   {
-    files: ['**/*.js', '**/*.ts'],
+    files: ['**/*.js', '**/*.mjs', '**/*.ts'],
     languageOptions: {
       parser: typeScriptEsLint.parser,
       parserOptions: {

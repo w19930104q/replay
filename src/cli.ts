@@ -5,7 +5,12 @@
  */
 
 import { parseArgs } from 'node:util';
-import { getHeadlessEnvVar, getRecordingPaths, runFiles } from './CLIUtils.js';
+import {
+  getHeadlessEnvVar,
+  getRecordingPaths,
+  parseParameterArgs,
+  runFiles,
+} from './CLIUtils.js';
 
 const { values, positionals: files } = parseArgs({
   options: {
@@ -17,6 +22,11 @@ const { values, positionals: files } = parseArgs({
     },
     ext: {
       type: 'string',
+    },
+    param: {
+      type: 'string',
+      multiple: true,
+      default: [],
     },
     help: {
       type: 'boolean',
@@ -32,9 +42,13 @@ if (values.help) {
 Usage: replay [options] <files..>
 
 Options:
-  --headless            Run using the browser's headless mode. 
+  --headless            Run using the browser's headless mode.
                         Choices: shell, true, 1, 0, false
   --ext, --extension    Run using an extension identified by the path.
+  --param name=value    Bind a typed flow parameter. Can be repeated. Values
+                        are parsed as JSON literals (true/false, numbers and
+                        quoted strings); otherwise they are treated as
+                        strings.
   -h, --help            Show help
 `);
   process.exit(0);
@@ -53,4 +67,5 @@ await runFiles(recordingPaths, {
     values.headless || process.env['PUPPETEER_HEADLESS']
   ),
   extension: values.extension || values.ext,
+  parameters: parseParameterArgs(values.param ?? []),
 });

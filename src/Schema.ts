@@ -5,6 +5,7 @@
  */
 
 import { JSONSerializable, JSONValue } from './types.js';
+import type { ParameterDefinitions } from './Parameters.js';
 
 export type Target = string;
 export type Pattern = string;
@@ -297,6 +298,13 @@ export interface UserFlow {
    * selector `[data-testid=value]` for the element `<div data-testid=value>`.
    */
   selectorAttribute?: string;
+  /**
+   * Typed parameter bindings keyed by parameter name. Each binding points at
+   * an existing leaf field of the flow through a JSON Pointer and declares the
+   * scalar type accepted by the parameter. The bindings are validated and
+   * applied by `bindParameters` before the flow is run or stringified.
+   */
+  parameters?: ParameterDefinitions;
   steps: Step[];
 }
 

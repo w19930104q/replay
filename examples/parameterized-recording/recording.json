@@ -1,0 +1,45 @@
+{
+  "title": "Parameterized report RPA",
+  "parameters": {
+    "reportUrl": {
+      "path": "/steps/0/url",
+      "type": "string",
+      "defaultValue": "https://example.com/report?region=default"
+    },
+    "query": {
+      "path": "/steps/1/value",
+      "type": "string",
+      "defaultValue": "recorded query"
+    },
+    "viewportWidth": {
+      "path": "/steps/2/width",
+      "type": "number",
+      "defaultValue": 800
+    },
+    "mobile": {
+      "path": "/steps/2/isMobile",
+      "type": "boolean",
+      "defaultValue": false
+    }
+  },
+  "steps": [
+    {
+      "type": "navigate",
+      "url": "https://example.com/report?region=default"
+    },
+    {
+      "type": "change",
+      "selectors": ["#query"],
+      "value": "recorded query"
+    },
+    {
+      "type": "setViewport",
+      "width": 800,
+      "height": 600,
+      "deviceScaleFactor": 1,
+      "isMobile": false,
+      "hasTouch": false,
+      "isLandscape": false
+    }
+  ]
+}
